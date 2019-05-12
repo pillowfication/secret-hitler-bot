@@ -14,6 +14,15 @@ const Vote = {
   YES: 'yes',
   NO: 'no'
 }
+const ElectionResult = {
+  PASSED: 'passed',
+  FAILED: 'failed',
+  ANARCHY: 'anarchy'
+}
+const Policy = {
+  LIBERAL: 'liberal',
+  FACIST: 'facist'
+}
 
 function shuffle (arr) {
   for (let i = arr.length - 1; i > 0; --i) {
@@ -31,6 +40,7 @@ module.exports = class SecretHitler {
   initialize (users) {
     const { HITLER, FACIST, LIBERAL } = Role
     const roles = shuffle(({
+      2: [ LIBERAL, LIBERAL ],
       5: [ HITLER, FACIST, LIBERAL, LIBERAL, LIBERAL ],
       6: [ HITLER, FACIST, LIBERAL, LIBERAL, LIBERAL, LIBERAL ],
       7: [ HITLER, FACIST, FACIST, LIBERAL, LIBERAL, LIBERAL, LIBERAL ],
@@ -50,10 +60,18 @@ module.exports = class SecretHitler {
     this.previousChancellor = null
     this.failedGovernmentsCount = 0
     this.chancellorCandidate = null
+    this.policyDeck = shuffle([ ...Array(6).fill(Policy.LIBERAL), ...Array(11).fill(Policy.FACIST) ])
+    this.discardDeck = []
+    this.passedLiberalPoliciesCount = 0
+    this.passedFacistPoliciesCount = 0
   }
 
   _findPlayer (user) {
     return this.players.find(player => player.user.id === user.id)
+  }
+
+  getState () {
+    return this.state
   }
 
   getPlayers () {
@@ -83,6 +101,14 @@ module.exports = class SecretHitler {
     return this.players[this.presidentPlacard].user
   }
 
+  getPreviousPresident () {
+    return this.previousPresident
+  }
+
+  getPreviousChancellor () {
+    return this.previousChancellor
+  }
+
   getIneligibleCandidates () {
     const ineligibleCandidates = []
     if (this.previousPresident && this.previousPresident.isAlive) {
@@ -108,16 +134,71 @@ module.exports = class SecretHitler {
       (this.previousChancellor === null || this.previousChancellor.id !== user.id)
   }
 
+  passPresidentPlacard () {
+    do {
+      this.presidentPlacard = (this.presidentPlacard + 1) % this.players.length
+    } while (!this.isAlive(this.getPresidentialCandidate()))
+  }
+
   nominateChancellor (user) {
     this.state = State.ELECTION_VOTE
     this.chancellorCandidate = user
   }
 
   voteGovernment (votes) {
+    if (votes.reduce((acc, curr) => curr === Vote.YES ? acc + 1 : acc - 1, 0) > 0) {
+      this.previousPresident = this.getPresidentialCandidate()
+      this.previousChancellor = this.chancellorCandidate
+      this.failedGovernmentsCount = 0
+      this.state = State.LEGISLATIVE_SESSION
+      return ElectionResult.PASSED
+    } else if (++this.failedGovernmentsCount === 3) {
+      this.previousPresident = null
+      this.previousChancellor = null
+      this.failedGovernmentsCount = 0
+      this.state = State.ELECTION
+      return ElectionResult.ANARCHY
+    } else {
+      this.passPresidentPlacard()
+      this.state = State.ELECTION
+      return ElectionResult.FAILED
+    }
+  }
 
+  drawPolicies (count) {
+    return this.policyDeck.splice(0, count)
+  }
+
+  peekPolicies (count) {
+    return this.policyDeck.slice(0, count)
+  }
+
+  enactPolicy (policy, anarchy) {
+    switch (policy) {
+      case Policy.LIBERAL:
+        ++this.passedLiberalPoliciesCount
+        break
+      case Policy.FACIST:
+        ++this.passedFacistPoliciesCount
+        break
+    }
+    this.passPresidentPlacard()
+    this.state = State.ELECTION
+  }
+
+  discardPolicies (policies) {
+    this.discardDeck.push(...policies)
+  }
+
+  reshufflePolicies () {
+    if (this.policyDeck.length < 3) {
+      this.policyDeck = shuffle([ ...this.policyDeck, ...this.discardDeck ])
+    }
   }
 }
 
 module.exports.State = State
 module.exports.Role = Role
 module.exports.Vote = Vote
+module.exports.ElectionResult = ElectionResult
+module.exports.Policy = Policy
